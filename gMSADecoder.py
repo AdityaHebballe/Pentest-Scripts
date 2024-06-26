@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+from ldap3 import ALL, Server, Connection, NTLM, SASL, KERBEROS, extend, SUBTREE
+import argparse
+from binascii import hexlify
+from Cryptodome.Hash import MD4
+from impacket.ldap.ldaptypes import ACE, ACCESS_ALLOWED_OBJECT_ACE, ACCESS_MASK, LDAP_SID, SR_SECURITY_DESCRIPTOR
+from impacket.structure import Structure
+import sys
+
+data = [1,0,0,0,36,2,0,0,16,0,18,1,20,2,28,2,184,246,245,69,82,137,32,210,147,206,23,220,171,109,208,247,126,53,254,226,98,214,25,197,84,41,226,70,75,141,86,94,62,9,203,13,17,98,207,254,147,251,73,83,127,206,94,145,28,79,159,202,230,198,5,43,115,132,39,186,160,238,73,223,175,138,15,101,140,124,224,163,100,18,247,165,76,200,145,28,168,106,95,193,200,58,196,246,26,234,135,44,148,149,60,173,39,74,108,189,198,204,171,136,131,191,138,175,239,222,133,242,79,165,68,149,224,233,50,109,244,135,26,128,216,241,162,237,85,16,140,250,134,165,4,253,214,125,66,123,201,75,128,189,160,218,17,85,116,228,127,234,88,88,3,149,225,15,8,72,219,162,245,165,3,10,124,27,172,12,137,118,23,8,52,127,115,134,194,193,12,204,240,42,48,69,243,255,214,150,109,72,125,177,236,101,165,46,221,33,244,8,8,85,12,141,222,208,93,198,59,186,73,107,6,41,83,113,167,185,106,40,182,68,59,170,216,49,220,231,63,122,237,102,192,88,81,73,245,98,4,168,88,76,237,74,206,225,171,243,15,240,146,37,177,239,0,0,140,130,131,20,83,90,218,114,55,138,237,38,160,238,230,14,153,149,175,129,144,166,7,12,144,184,161,229,104,89,11,186,103,215,206,12,248,243,234,127,251,124,55,194,171,82,34,144,144,62,63,46,242,10,70,233,178,143,73,22,217,146,157,86,43,233,123,68,4,101,207,30,61,126,197,79,49,186,129,204,80,201,31,130,247,168,64,219,255,187,136,158,82,31,140,56,25,108,12,223,147,237,177,116,166,165,49,237,219,90,92,98,14,199,51,102,180,241,207,76,8,179,132,194,60,5,247,81,169,236,102,224,147,190,78,151,172,125,78,50,249,182,126,243,246,87,73,21,82,211,67,220,166,155,7,185,118,20,100,119,169,164,241,126,8,182,193,213,119,41,187,232,231,103,113,31,18,45,247,151,21,76,181,163,43,95,195,86,128,223,81,31,46,96,224,250,7,23,241,186,112,233,179,119,34,17,237,62,157,12,31,31,25,1,58,90,251,252,45,208,220,142,139,67,69,227,98,13,182,28,211,47,84,206,245,198,0,181,120,82,219,169,183,52,129,58,241,140,74,105,204,19,144,24,197,217,0,0,222,227,97,211,243,5,0,0,222,133,145,32,243,5,0,0]
+data = bytes(data)
+class MSDS_MANAGEDPASSWORD_BLOB(Structure):
+    structure = (
+        ('Version','<H'),
+        ('Reserved','<H'),
+        ('Length','<L'),
+        ('CurrentPasswordOffset','<H'),
+        ('PreviousPasswordOffset','<H'),
+        ('QueryPasswordIntervalOffset','<H'),
+        ('UnchangedPasswordIntervalOffset','<H'),
+        ('CurrentPassword',':'),
+        ('PreviousPassword',':'),
+        #('AlignmentPadding',':'),
+        ('QueryPasswordInterval',':'),
+        ('UnchangedPasswordInterval',':'),
+    )
+
+    def __init__(self, data = None):
+        Structure.__init__(self, data = data)
+
+    def fromString(self, data):
+        Structure.fromString(self,data)
+
+        if self['PreviousPasswordOffset'] == 0:
+            endData = self['QueryPasswordIntervalOffset']
+        else:
+            endData = self['PreviousPasswordOffset']
+
+        self['CurrentPassword'] = self.rawData[self['CurrentPasswordOffset']:][:endData - self['CurrentPasswordOffset']]
+        if self['PreviousPasswordOffset'] != 0:
+            self['PreviousPassword'] = self.rawData[self['PreviousPasswordOffset']:][:self['QueryPasswordIntervalOffset']-self['PreviousPasswordOffset']]
+
+        self['QueryPasswordInterval'] = self.rawData[self['QueryPasswordIntervalOffset']:][:self['UnchangedPasswordIntervalOffset']-self['QueryPasswordIntervalOffset']]
+        self['UnchangedPasswordInterval'] = self.rawData[self['UnchangedPasswordIntervalOffset']:]
+
+blob = MSDS_MANAGEDPASSWORD_BLOB()
+blob.fromString(data)
+hash = MD4.new ()
+hash.update(blob['CurrentPassword'][:-2])
+passwd = hexlify(hash.digest()).decode("utf-8")
+print(passwd)
